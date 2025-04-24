@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Directory Manager with Voice Control By Anmol, Prince, Ankit</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Directory Manager with Voice Control</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="create">Create</button>
+            <button class="tab-btn" data-tab="delete">Delete</button>
+            <button class="tab-btn" data-tab="move">Move</button>
+            <button class="tab-btn" data-tab="organize">Organize</button>
+            <button id="voice-btn" class="voice-control">🎤 Voice Control Active</button>
+        </div>
+
+        <div id="voice-status" class="voice-status">
+            <p>Voice commands: Say "create", "delete", "move", or "organize"</p>
+            <p id="voice-feedback">Listening for commands...</p>
+        </div>
+
+        <div class="tab-content active" id="create">
+            <h2>Create Directory</h2>
+            <div class="form-group">
+                <label>Parent Directory:</label>
+                <input type="text" id="create-path" placeholder="C:/path/to/parent">
+            </div>
+            <div class="form-group">
+                <label>Directory Name:</label>
+                <input type="text" id="create-name" placeholder="new-folder">
+            </div>
+            <button id="create-btn">Create</button>
+        </div>
+
+        <div class="tab-content" id="delete">
+            <h2>Delete Directory</h2>
+            <div class="form-group">
+                <label>Path to Delete:</label>
+                <input type="text" id="delete-path" placeholder="C:/path/to/delete">
+            </div>
+            <button id="delete-btn" class="danger">Delete</button>
+        </div>
+
+        <div class="tab-content" id="move">
+            <h2>Move Directory</h2>
+            <div class="form-group">
+                <label>Source Path:</label>
+                <input type="text" id="move-src" placeholder="C:/path/to/source">
+            </div>
+            <div class="form-group">
+                <label>Destination Path:</label>
+                <input type="text" id="move-dest" placeholder="C:/path/to/destination">
+            </div>
+            <button id="move-btn">Move</button>
+        </div>
+
+        <div class="tab-content" id="organize">
+            <h2>Organize Directory</h2>
+            <div class="form-group">
+                <label>Directory to Organize:</label>
+                <input type="text" id="organize-path" placeholder="C:/path/to/organize">
+            </div>
+            <div id="categories-list"></div>
+            <button id="organize-btn">Organize</button>
+        </div>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+            const firstInput = document.querySelector(`#${tabName} input`);
+            if (firstInput) {
+                firstInput.focus();
+            }
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        // API call function
+        async function callApi(action, data) {
+            const output = document.getElementById('output');
+            output.textContent = "Processing request...";
+            output.className = '';
+            
+            try {
+                const response = await fetch('/api/directory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action, ...data })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                output.textContent = result.message;
+                output.className = result.success ? 'success' : 'error';
+                
+                // Update categories list if organizing
+                if (action === 'organize' && result.categories) {
+                    const categoriesList = document.getElementById('categories-list');
+                    categoriesList.innerHTML = '<h3>Categories:</h3><ul>' + 
+                        result.categories.map(cat => `<li>${cat}</li>`).join('') + '</ul>';
+                }
+                
+                return result;
+            } catch (error) {
+                console.error('API Error:', error);
+                output.textContent = `Error: ${error.message}`;
+                output.className = 'error';
+                return { success: false, message: error.message };
+            }
+        }
+
+        // Button event handlers
+        document.getElementById('create-btn').addEventListener('click', () => {
+            const path = document.getElementById('create-path').value;
+            const name = document.getElementById('create-name').value;
+            if (!path || !name) {
+                alert('Please fill all fields');
+                return;
+            }
+            callApi('create', { path, name });
+        });
+
+        document.getElementById('delete-btn').addEventListener('click', () => {
+            const path = document.getElementById('delete-path').value;
+            if (!path || !confirm('Are you sure you want to delete this?')) return;
+            callApi('delete', { path });
+        });
+
+        document.getElementById('move-btn').addEventListener('click', () => {
+            const path = document.getElementById('move-src').value;
+            const dest = document.getElementById('move-dest').value;
+            if (!path || !dest) {
+                alert('Please fill all fields');
+                return;
+            }
+            callApi('move', { path, dest });
+        });
+
+        document.getElementById('organize-btn').addEventListener('click', () => {
+            const path = document.getElementById('organize-path').value;
+            if (!path) {
+                alert('Please enter a path');
+                return;
+            }
+            callApi('organize', { path });
+        });
+
+        // Voice command polling
+        async function checkVoiceCommand() {
+            try {
+                const response = await fetch('/api/voice_command');
+                const result = await response.json();
+                
+                if (result.success && result.command) {
+                    const feedback = document.getElementById('voice-feedback');
+                    feedback.textContent = `Executing: "${result.command}"`;
+                    feedback.style.color = '#4361ee';
+                    
+                    switchTab(result.command);
+                    
+                    // Reset feedback after 2 seconds
+                    setTimeout(() => {
+                        feedback.textContent = 'Listening for commands...';
+                        feedback.style.color = '';
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('Voice command check failed:', error);
+            }
+        }
+
+        // Check for voice commands every second
+        setInterval(checkVoiceCommand, 1000);
+    </script>
+</body>
+</html>
